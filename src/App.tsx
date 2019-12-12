@@ -1,29 +1,116 @@
-import React, { useState, useEffect } from "react";
-import "./App.css";
-import * as t from "io-ts";
+import { getMonoid as getArrayMonoid } from "fp-ts/lib/Array";
+import { fold, Either, isRight, right, left } from "fp-ts/lib/Either";
+import { identity } from "fp-ts/lib/function";
+import {
+  getMonoid as getOptionMonoid,
+  none,
+  Option,
+  some,
+  toNullable
+} from "fp-ts/lib/Option";
 import { pipe } from "fp-ts/lib/pipeable";
-import { fold } from "fp-ts/lib/Either";
+import * as t from "io-ts";
+import React, { useState } from "react";
+import "./App.css";
+
+type Validator<I, A> = (input: I) => Either<string, A>;
+
+class StringSubtype<A extends string> extends t.Type<A, string, string> {
+  constructor(
+    /** a unique name for this codec */
+    name: string,
+    /** returns either the string decoded to A or an error message */
+    validate: Validator<string, A>
+  ) {
+    super(
+      name,
+      (u): u is A => isRight(validate(`${u}`)),
+      (input, ctx) =>
+        pipe(
+          validate(input),
+          fold(
+            e => t.failure(input, ctx, e),
+            a => t.success(a)
+          )
+        ),
+      a => `${a}`
+    );
+  }
+}
+
+class RegexStringSubtype<A extends string> extends StringSubtype<A> {
+  constructor(name: string, validate: RegExp, message?: string) {
+    super(name, input =>
+      input.match(validate) !== null
+        ? right(input as A)
+        : left(message || `Must match regex /${validate.source}/`)
+    );
+  }
+}
 
 type Email = string;
 
-function isEmailStr(s: string): boolean {
-  return s.match(/^[^@]+@[^@]+$/) !== null;
-}
-
-const EmailFromString = new t.Type<Email, string, string>(
-  "EmailCodec",
-  (u): u is Email => isEmailStr(`${u}`),
-  (input, ctx) =>
-    isEmailStr(input) ? t.success(input) : t.failure(input, ctx),
-  email => `${email}`
+const EmailFromString = new RegexStringSubtype<Email>(
+  "EmailFromString",
+  /^[^@]+@[^@]+$/,
+  "Must be a valid e-mail address"
 );
 
+type NonEmptyString = string;
+
+const validateNonEmpty: Validator<string, NonEmptyString> = (input: string) =>
+  input.match(/\S+/) !== null ? right(input) : left("Must be non-empty");
+
+const NonEmptyString = new StringSubtype<NonEmptyString>(
+  "NonEmptyString",
+  validateNonEmpty
+);
+
+type AddressString = NonEmptyString;
+
+const isAddressString: Validator<string, AddressString> = (
+  input: NonEmptyString
+) =>
+  input.length <= 100 ? right(input) : left("Must be under 100 characters");
+
+const AddressStringFromNonEmptyString = new StringSubtype<AddressString>(
+  "AddressStringFromNonEmptyString",
+  isAddressString
+);
+
+type PhoneNumberString = NonEmptyString;
+
+const PhoneNumberStringFromNonEmptyString = new RegexStringSubtype<
+  PhoneNumberString
+>("PhoneNumberStringFromNonEmptyString", /^([+]|00)?$/);
+
 const Person = t.type({
-  name: t.string,
-  address: t.string,
+  name: t.string.pipe(NonEmptyString),
+  address: t.string.pipe(NonEmptyString).pipe(AddressStringFromNonEmptyString),
   email: t.string.pipe(EmailFromString),
-  phone: t.string
+  phone: t.string.pipe(NonEmptyString).pipe(PhoneNumberStringFromNonEmptyString)
 });
+
+type Person = t.TypeOf<typeof Person>;
+
+const errorCombinator = getOptionMonoid(getArrayMonoid<string>());
+
+function errorsForField(field: string): (e: t.Errors) => Option<string[]> {
+  return errors =>
+    errors
+      .filter(error => error.context.slice(-1).find(val => val.key === field))
+      .map(error => error.message || `Unknown error`)
+      .reduce(
+        (acc: Option<string[]>, cur) =>
+          errorCombinator.concat(acc, some([cur])),
+        none
+      );
+}
+
+const errorsForName = errorsForField("name");
+const errorsForAddress = errorsForField("address");
+const errorsForEmail = errorsForField("email");
+const errorsForPhone = errorsForField("phone");
 
 const App: React.FC = () => {
   const [name, setName] = useState("");
@@ -31,11 +118,12 @@ const App: React.FC = () => {
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
 
+  const result = Person.decode({ name, address, email, phone });
   const errors = pipe(
-    Person.decode({ name, address, email, phone }),
+    result,
     fold(
-      () => <p>Failboat</p>,
-      () => null
+      errors => errors,
+      _person => []
     )
   );
 
@@ -46,7 +134,6 @@ const App: React.FC = () => {
       </header>
       <main>
         <form>
-          {errors}
           <label>
             Name:{" "}
             <input
@@ -55,6 +142,7 @@ const App: React.FC = () => {
               value={name}
               onChange={e => setName(e.target.value)}
             />
+            {toNullable(errorsForName(errors))}
           </label>
           <label>
             Address:{" "}
@@ -64,6 +152,7 @@ const App: React.FC = () => {
               value={address}
               onChange={e => setAddress(e.target.value)}
             />
+            {toNullable(errorsForAddress(errors))}
           </label>
           <label>
             Email:{" "}
@@ -73,6 +162,7 @@ const App: React.FC = () => {
               value={email}
               onChange={e => setEmail(e.target.value)}
             />
+            {toNullable(errorsForEmail(errors))}
           </label>
           <label>
             Phone:{" "}
@@ -82,6 +172,7 @@ const App: React.FC = () => {
               value={phone}
               onChange={e => setPhone(e.target.value)}
             />
+            {toNullable(errorsForPhone(errors))}
           </label>
         </form>
       </main>
