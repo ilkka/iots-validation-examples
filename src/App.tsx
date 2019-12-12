@@ -80,9 +80,27 @@ const AddressStringFromNonEmptyString = new StringSubtype<AddressString>(
 
 type PhoneNumberString = NonEmptyString;
 
-const PhoneNumberStringFromNonEmptyString = new RegexStringSubtype<
-  PhoneNumberString
->("PhoneNumberStringFromNonEmptyString", /^([+]|00)?$/);
+const HasCountryCodeCodec = new RegexStringSubtype<PhoneNumberString>(
+  "HasCountryCodeCodec",
+  /^([+]|00)[0-9]{2,4}/,
+  "Must start with a country code"
+);
+
+const HasAreaCodeCodec = new RegexStringSubtype<PhoneNumberString>(
+  "HasAreaCodeCodec",
+  /^[0-9+]{3,6}(\s|-)?[0-9]{1,4}/,
+  "Must have an area code"
+);
+
+const HasLocalPartCodec = new RegexStringSubtype<PhoneNumberString>(
+  "HasLocalPartCodec",
+  /^[0-9+-]{4,11}(\s|-)?[0-9]{4,}$/,
+  "Must be a complete phone number"
+);
+
+const PhoneNumberStringFromNonEmptyString = HasCountryCodeCodec.pipe(
+  HasAreaCodeCodec
+).pipe(HasLocalPartCodec);
 
 const Person = t.type({
   name: t.string.pipe(NonEmptyString),
