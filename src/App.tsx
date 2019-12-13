@@ -1,5 +1,5 @@
 import { getMonoid as getArrayMonoid } from "fp-ts/lib/Array";
-import { fold, Either, isRight, right, left } from "fp-ts/lib/Either";
+import { fold, right, left } from "fp-ts/lib/Either";
 import {
   getMonoid as getOptionMonoid,
   none,
@@ -11,41 +11,9 @@ import { pipe } from "fp-ts/lib/pipeable";
 import * as t from "io-ts";
 import React, { useState } from "react";
 import "./App.css";
-
-type Validator<I, A> = (input: I) => Either<string, A>;
-
-class StringSubtype<A extends string> extends t.Type<A, string, string> {
-  constructor(
-    /** a unique name for this codec */
-    name: string,
-    /** returns either the string decoded to A or an error message */
-    validate: Validator<string, A>
-  ) {
-    super(
-      name,
-      (u): u is A => isRight(validate(`${u}`)),
-      (input, ctx) =>
-        pipe(
-          validate(input),
-          fold(
-            e => t.failure(input, ctx, e),
-            a => t.success(a)
-          )
-        ),
-      a => `${a}`
-    );
-  }
-}
-
-class RegexStringSubtype<A extends string> extends StringSubtype<A> {
-  constructor(name: string, validate: RegExp, message?: string) {
-    super(name, input =>
-      input.match(validate) !== null
-        ? right(input as A)
-        : left(message || `Must match regex /${validate.source}/`)
-    );
-  }
-}
+import { StringifiedType, Validator } from "./Validator";
+import { RegexStringSubtype } from "./RegexStringSubtype";
+import { EmailCodec } from "./Email";
 
 type Email = string;
 
@@ -60,7 +28,7 @@ type NonEmptyString = string;
 const validateNonEmpty: Validator<string, NonEmptyString> = (input: string) =>
   input.match(/\S+/) !== null ? right(input) : left("Must be non-empty");
 
-const NonEmptyString = new StringSubtype<NonEmptyString>(
+const NonEmptyString = new StringifiedType<NonEmptyString>(
   "NonEmptyString",
   validateNonEmpty
 );
@@ -72,7 +40,7 @@ const isAddressString: Validator<string, AddressString> = (
 ) =>
   input.length <= 100 ? right(input) : left("Must be under 100 characters");
 
-const AddressStringFromNonEmptyString = new StringSubtype<AddressString>(
+const AddressStringFromNonEmptyString = new StringifiedType<AddressString>(
   "AddressStringFromNonEmptyString",
   isAddressString
 );
@@ -104,7 +72,7 @@ const PhoneNumberStringFromNonEmptyString = HasCountryCodeCodec.pipe(
 const Person = t.type({
   name: t.string.pipe(NonEmptyString),
   address: t.string.pipe(NonEmptyString).pipe(AddressStringFromNonEmptyString),
-  email: t.string.pipe(EmailFromString),
+  email: t.string.pipe(NonEmptyString).pipe(EmailCodec),
   phone: t.string.pipe(NonEmptyString).pipe(PhoneNumberStringFromNonEmptyString)
 });
 
