@@ -1,6 +1,5 @@
 import { getMonoid as getArrayMonoid } from "fp-ts/lib/Array";
 import { fold, Either, isRight, right, left } from "fp-ts/lib/Either";
-import { identity } from "fp-ts/lib/function";
 import {
   getMonoid as getOptionMonoid,
   none,
