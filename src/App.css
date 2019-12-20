@@ -43,4 +43,15 @@ form {
   display: flex;
   flex-direction: column;
   margin: 0 auto;
+  max-width: 650px;
+}
+
+.labelText {
+  display: inline-block;
+  width: 80px;
+}
+
+.errors {
+  margin-left: 1em;
+  color: red;
 }

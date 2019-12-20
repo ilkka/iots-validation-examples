@@ -1,34 +1,29 @@
 import { getMonoid as getArrayMonoid } from "fp-ts/lib/Array";
-import { fold, right, left } from "fp-ts/lib/Either";
+import {fold, right, left } from "fp-ts/lib/Either";
 import {
   getMonoid as getOptionMonoid,
   none,
   Option,
   some,
-  toNullable
+  toNullable,
+  map as mapOption
 } from "fp-ts/lib/Option";
 import { pipe } from "fp-ts/lib/pipeable";
 import * as t from "io-ts";
 import React, { useState } from "react";
 import "./App.css";
-import { StringifiedType, Validator } from "./Validator";
+import { StringCodec, Validator } from "./Validator";
 import { RegexStringSubtype } from "./RegexStringSubtype";
 import { EmailCodec } from "./Email";
-
-type Email = string;
-
-const EmailFromString = new RegexStringSubtype<Email>(
-  "EmailFromString",
-  /^[^@]+@[^@]+$/,
-  "Must be a valid e-mail address"
-);
+import {flow} from "fp-ts/lib/function";
+import {inspect} from "util";
 
 type NonEmptyString = string;
 
 const validateNonEmpty: Validator<string, NonEmptyString> = (input: string) =>
   input.match(/\S+/) !== null ? right(input) : left("Must be non-empty");
 
-const NonEmptyString = new StringifiedType<NonEmptyString>(
+const NonEmptyString = new StringCodec<NonEmptyString>(
   "NonEmptyString",
   validateNonEmpty
 );
@@ -40,7 +35,7 @@ const isAddressString: Validator<string, AddressString> = (
 ) =>
   input.length <= 100 ? right(input) : left("Must be under 100 characters");
 
-const AddressStringFromNonEmptyString = new StringifiedType<AddressString>(
+const AddressStringFromNonEmptyString = new StringCodec<AddressString>(
   "AddressStringFromNonEmptyString",
   isAddressString
 );
@@ -70,13 +65,13 @@ const PhoneNumberStringFromNonEmptyString = HasCountryCodeCodec.pipe(
 ).pipe(HasLocalPartCodec);
 
 const Person = t.type({
+  // Composability!
   name: t.string.pipe(NonEmptyString),
   address: t.string.pipe(NonEmptyString).pipe(AddressStringFromNonEmptyString),
   email: t.string.pipe(NonEmptyString).pipe(EmailCodec),
   phone: t.string.pipe(NonEmptyString).pipe(PhoneNumberStringFromNonEmptyString)
 });
 
-type Person = t.TypeOf<typeof Person>;
 
 const errorCombinator = getOptionMonoid(getArrayMonoid<string>());
 
@@ -92,10 +87,14 @@ function errorsForField(field: string): (e: t.Errors) => Option<string[]> {
       );
 }
 
-const errorsForName = errorsForField("name");
-const errorsForAddress = errorsForField("address");
-const errorsForEmail = errorsForField("email");
-const errorsForPhone = errorsForField("phone");
+function showErrors(errors: Option<string[]>) {
+  return toNullable(mapOption((e: string[]) => <span className="errors">{e.join(", ")}</span>)(errors));
+}
+
+const errorsForName = flow(errorsForField("name"), showErrors);
+const errorsForAddress = flow(errorsForField("address"), showErrors);
+const errorsForEmail = flow(errorsForField("email"), showErrors);
+const errorsForPhone = flow(errorsForField("phone"), showErrors);
 
 const App: React.FC = () => {
   const [name, setName] = useState("");
@@ -120,45 +119,46 @@ const App: React.FC = () => {
       <main>
         <form>
           <label>
-            Name:{" "}
+            <span className="labelText">Name:</span>{" "}
             <input
               type="text"
               name="name"
               value={name}
               onChange={e => setName(e.target.value)}
             />
-            {toNullable(errorsForName(errors))}
+            {errorsForName(errors)}
           </label>
           <label>
-            Address:{" "}
+            <span className="labelText">Address:</span>{" "}
             <input
               type="text"
               name="address"
               value={address}
               onChange={e => setAddress(e.target.value)}
             />
-            {toNullable(errorsForAddress(errors))}
+            {errorsForAddress(errors)}
           </label>
           <label>
-            Email:{" "}
+            <span className="labelText">Email:</span>{" "}
             <input
               type="email"
               name="email"
               value={email}
               onChange={e => setEmail(e.target.value)}
             />
-            {toNullable(errorsForEmail(errors))}
+            {errorsForEmail(errors)}
           </label>
           <label>
-            Phone:{" "}
+            <span className="labelText">Phone:</span>{" "}
             <input
               type="tel"
               name="phone"
               value={phone}
               onChange={e => setPhone(e.target.value)}
             />
-            {toNullable(errorsForPhone(errors))}
+            {errorsForPhone(errors)}
           </label>
+          <pre><code>{inspect(result)}</code></pre>
         </form>
       </main>
     </div>
